@@ -1,0 +1,40 @@
+/// Storage helpers
+
+fn get_nonce_slot_leaf(nonce: u64) -> u256 {
+    let nonce_num: u256 = <(u64, u64, u64, u64)>::into((0, 0, 0, nonce));
+
+    let state_ctx1: Ctx8 = jet::tapdata_init();
+    let state_ctx2: Ctx8 = jet::sha_256_ctx_8_add_32(state_ctx1, nonce_num);
+
+    jet::sha_256_ctx_8_finalize(state_ctx2)
+}
+
+fn get_script_hash_for_storage(nonce: u64) -> u256 {
+    let nonce_slot_leaf: u256 = get_nonce_slot_leaf(nonce);
+
+    // Build a TapBranch with the current tapleaf and the storage slot leaf
+    let tap_node: u256 = jet::build_tapbranch(jet::tapleaf_hash(), nonce_slot_leaf);
+
+    // Compute a TapTweak using the unspendeable key
+    let bip0341_key: u256 = 0x50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0;
+    let tweaked_key: u256 = jet::build_taptweak(bip0341_key, tap_node);
+
+    // Turn the TapTweak into a script hash
+    let hash_ctx1: Ctx8 = jet::sha_256_ctx_8_init();
+    let hash_ctx2: Ctx8 = jet::sha_256_ctx_8_add_2(hash_ctx1, 0x5120); // Segwit v1, length 32
+    let hash_ctx3: Ctx8 = jet::sha_256_ctx_8_add_32(hash_ctx2, tweaked_key);
+
+    jet::sha_256_ctx_8_finalize(hash_ctx3)
+}
+
+/// Main path logic
+
+fn unlock(signature: Signature, nonce: u64) {
+    jet::bip_0340_verify((param::OWNER_PUBKEY, jet::sig_all_hash()), signature);
+
+    assert!(jet::eq_256(jet::current_script_hash(), get_script_hash_for_storage(nonce)));
+}
+
+fn main() {
+    unlock(witness::SIGNATURE, witness::NONCE);
+}
